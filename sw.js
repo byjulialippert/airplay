@@ -1,6 +1,6 @@
 // Bei JEDER Änderung an lib/, model/ oder anderen Dateien die Zahl hochzählen
 // (v2 -> v3 -> v4 ...), damit der Browser die neuen Dateien holt.
-const CACHE_NAME = 'atem-vis-v2';
+const CACHE_NAME = 'atem-vis-v3';
 
 const ASSETS_TO_CACHE = [
   './',
