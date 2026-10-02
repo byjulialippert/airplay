@@ -1,21 +1,22 @@
 {
-    "short_name": "AtemVis",
-    "name": "Atemvisualisierung",
-    "icons": [
-      {
-        "src": "icon-192.png",
-        "type": "image/png",
-        "sizes": "192x192"
-      },
-      {
-        "src": "icon-512.png",
-        "type": "image/png",
-        "sizes": "512x512"
-      }
-    ],
-    "start_url": "./index.html",
-    "background_color": "#121212",
-    "theme_color": "#121212",
-    "display": "standalone",
-    "orientation": "portrait"
-  }
+  "short_name": "AtemVis",
+  "name": "Atemvisualisierung",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "scope": "./",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "display": "standalone"
+}
