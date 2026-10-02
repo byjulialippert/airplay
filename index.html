@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Atem Visualisierung</title>
+
+  <!-- PWA & Mobile Web App Meta-Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Atem">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,300..700&family=EB+Garamond:ital,wght@1,400..800&family=Literata:ital,opsz,wght@1,7..72,200..900&display=swap" rel="stylesheet">
+    
+
+  <!-- Lokale & CDN Bibliotheken -->
+  <script src="lib/p5.min.js"></script>
+  <script src="lib/hydra-synth1.js"></script>
+  <script src="lib/ml5.min.js"></script>
+
+  <style>
+    @font-face {
+      font-family: "Cardone Thin Italic";
+      src: url("CardoneTrial-ThinItalic.otf") format("opentype");
+    }
+
+    .eb-garamond {
+            font-family: "EB Garamond", serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: italic;
+        }
+
+    :root {
+      --bg: #000000;
+      --panel-bg: rgba(12, 12, 12, 0.72);
+      --panel-border: rgba(255, 255, 255, 0.14);
+      --text-dim: rgba(255, 255, 255, 0.55);
+      --text-bright: #f4f4f2;
+      --accent-glow: rgba(255, 255, 255, 0.9);
+
+      --desc-opacity: 0.55;
+      --words-gap: 1.2em;
+      --desc-gap: 0.3em;
+
+      --cursor-size: 10px;
+      --cursor-color: #ffffff;
+      --cursor-glow-color: rgba(255, 255, 255, 0.3);
+      --cursor-glow-size: 12px;
+      --cursor-pulse-duration: 2.4s;
+      --cursor-pulse-scale: 1.2;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body, a, button {
+      cursor: none;
+    }
+
+    #cursor-dot {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    #cursor-dot.visible {
+      opacity: 1;
+    }
+
+    #cursor-dot .dot-core {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: var(--cursor-size);
+      height: var(--cursor-size);
+      margin: calc(var(--cursor-size) / -2) 0 0 calc(var(--cursor-size) / -2);
+      border-radius: 50%;
+      background: var(--cursor-color);
+      box-shadow:
+        0 0 calc(var(--cursor-glow-size) * 0.5) calc(var(--cursor-glow-size) * 0.15) var(--cursor-glow-color),
+        0 0 var(--cursor-glow-size) calc(var(--cursor-glow-size) * 0.4) var(--cursor-glow-color);
+      animation: cursor-pulse var(--cursor-pulse-duration) ease-in-out infinite;
+    }
+
+    @keyframes cursor-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(var(--cursor-pulse-scale)); }
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #hydra-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #side-text {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 5;
+      font-family: "EB Garamond", serif;
+      font-size: clamp(16px, 2vw, 24px);
+      line-height: 1.35;
+      color: var(--text-bright);
+      white-space: nowrap;
+      width: max-content;
+      user-select: none;
+      pointer-events: none;
+      transform-origin: center center;
+    }
+
+    #p5-holder {
+      position: fixed;
+      top: 0;
+      left: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #controls {
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: clamp(16px, 2vw, 24px);
+      padding: 6px;
+      z-index: 10;
+    }
+
+    #controls.wide {
+      width: 12em;
+    }
+
+    #controls.stacked {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      column-gap: var(--desc-gap);
+      width: min(48em, calc(100vw - 48px));
+    }
+
+    #controls.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #mode-buttons {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: var(--words-gap);
+    }
+
+    #controls.wide #mode-buttons {
+      flex-direction: column;
+    }
+
+    .mode-desc {
+      margin: 0;
+      width: 100%;
+      font-family: "EB Garamond", serif;
+      font-size: inherit;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
+      text-align: center;
+      text-wrap: balance;
+      color: var(--text-bright);
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    #controls:has(#btn-auto:is(:hover, :focus-visible)) #desc-auto,
+    #controls:has(#btn-mic:is(:hover, :focus-visible)) #desc-mic {
+      opacity: var(--desc-opacity);
+    }
+
+    #controls.wide #desc-auto {
+      margin-bottom: var(--desc-gap);
+    }
+
+    #controls.wide #desc-mic {
+      margin-top: var(--desc-gap);
+    }
+
+    .mode-btn {
+      appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: "EB Garamond", serif;
+      font-size: clamp(16px, 2vw, 24px);
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+      border-radius: 999px;
+      cursor: none;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .mode-btn:hover {
+      color: var(--text-bright);
+    }
+
+    .mode-btn.active {
+      color: var(--text-bright);
+    }
+
+    .mode-btn:focus-visible {
+      outline: 2px solid var(--text-bright);
+      outline-offset: 2px;
+    }
+
+    #status {
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      color: var(--text-dim);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      z-index: 10;
+      transition: opacity 0.4s ease;
+      display: none;
+    }
+
+    #status.hidden {
+      opacity: 0;
+    }
+
+    #back-link {
+      position: fixed;
+      left: 24px;
+      top: 24px;
+      color: var(--text-dim);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-decoration: none;
+      z-index: 10;
+      transition: color 0.25s ease;
+    }
+
+    #back-link:hover,
+    #back-link:focus-visible {
+      color: var(--text-bright);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Responsiver Schriftzug -->
+  <div id="side-text">atme ein,<br>atme aus.</div>
+
+  <div id="p5-holder"></div>
+
+  <div id="status">Autonomer Modus</div>
+
+  <div id="controls">
+    <p class="mode-desc" id="desc-auto">Die Muster bewegen sich selbst. Lass deinen Atem ihren Impulsen folgen.</p>
+    <div id="mode-buttons">
+      <button class="mode-btn" id="btn-auto" onclick="switchMode('auto')">Autonom</button>
+      <button class="mode-btn" id="btn-mic" onclick="switchMode('mic')">Mikrofon</button>
+    </div>
+    <p class="mode-desc" id="desc-mic">Dein Atem erzeugt Bewegung. Lass ein visuelles Echo entstehen.</p>
+  </div>
+
+<script>
+  // =====================================================
+  // LEUCHTENDER CURSOR
+  // =====================================================
+  (function() {
+    const cursor = document.createElement("div");
+    cursor.id = "cursor-dot";
+    cursor.innerHTML = '<div class="dot-core"></div>';
+    document.body.appendChild(cursor);
+
+    window.addEventListener("mousemove", function(e) {
+      cursor.style.left = e.clientX + "px";
+      cursor.style.top = e.clientY + "px";
+      cursor.classList.add("visible");
+    }, { passive: true });
+
+    document.addEventListener("mouseleave", function() {
+      cursor.classList.remove("visible");
+    });
+  })();
+
+
+  // =====================================================
+  // ATEMVISUALISIERUNG — PWA Version
+  // =====================================================
+
+  // Teachable Machine Online URL (muss mit einem Slash / enden)
+    // Lokales Teachable-Machine-Modell (Ordner "model/" neben der index.html).
+  // Muss eine absolute Adresse sein und mit "/" enden.
+  const MODEL_URL = new URL("model/", window.location.href).href;
+
+  const CONFIDENCE_THRESHOLD = 0.6;
+  const EVENT_COOLDOWN = 250;
+
+  const INHALE_SPEED = 0.0025;
+  const EXHALE_SPEED = 0.035;
+
+  const VOLUME_NOISE_FLOOR = 0.01;
+  const VOLUME_CEILING = 0.18;
+  const MIN_SPEED_MULTIPLIER = 0.35;
+  const MAX_SPEED_MULTIPLIER = 3.0;
+  const VOLUME_SMOOTHING = 0.85;
+
+  const AUTO_INHALE_MIN = 2500;
+  const AUTO_INHALE_MAX = 6000;
+  const AUTO_INHALE_HOLD_MIN = 400;
+  const AUTO_INHALE_HOLD_MAX = 3000;
+  const AUTO_EXHALE_MIN = 2000;
+  const AUTO_EXHALE_MAX = 5000;
+  var AUTO_EXHALE_HOLD_MIN = 800;
+  const AUTO_EXHALE_HOLD_MAX = 5000;
+  const AUTO_SPEED_MIN = 0.5;
+  const AUTO_SPEED_MAX = 2.2;
+  const AUTO_SPEED_EASING = 0.015;
+
+  const AUTO_INHALE_DRIFT = 700;
+  const AUTO_INHALE_HOLD_DRIFT = 400;
+  const AUTO_EXHALE_DRIFT = 600;
+  const AUTO_EXHALE_HOLD_DRIFT = 500;
+
+  const NUM_PARTICLES = 5000;
+
+
+  // =====================================================
+  // MODUS-VERWALTUNG
+  // =====================================================
+
+  let currentMode = null;       // "auto" | "mic"
+  let autoGeneration = 0;       
+  let classifierLoading = false;
+  let volumeAnalysisStarted = false;
+
+  function switchMode(newMode) {
+    if (newMode === currentMode) return;
+
+    currentMode = newMode;
+    autoGeneration++;
+
+    if (newMode === "auto") {
+      currentLabel = "Autonomer Modus";
+      scheduleAutonomousBreath(autoGeneration);
+    } else if (newMode === "mic") {
+      currentLabel = classifierReady ? "Höre zu..." : "Lade Modell...";
+
+      if (!classifierLoading) {
+        classifierLoading = true;
+        startBreathRecognition();
+      }
+
+      if (!volumeAnalysisStarted) {
+        volumeAnalysisStarted = true;
+        startVolumeAnalysis();
+      }
+    }
+
+    updateControlsUI();
+  }
+
+  function updateControlsUI() {
+    document.getElementById("btn-auto").classList.toggle("active", currentMode === "auto");
+    document.getElementById("btn-mic").classList.toggle("active", currentMode === "mic");
+    document.getElementById("status").textContent = currentMode === "auto" ? "Autonomer Modus" : currentLabel;
+  }
+
+
+  // =====================================================
+  // AUTONOMER ATEM-ZYKLUS
+  // =====================================================
+
+  let autoTargetSpeed = 1;
+
+  let currentInhaleDuration = (AUTO_INHALE_MIN + AUTO_INHALE_MAX) / 2;
+  let currentInhaleHold = (AUTO_INHALE_HOLD_MIN + AUTO_INHALE_HOLD_MAX) / 2;
+  let currentExhaleDuration = (AUTO_EXHALE_MIN + AUTO_EXHALE_MAX) / 2;
+  let currentExhaleHold = (AUTO_EXHALE_HOLD_MIN + AUTO_EXHALE_HOLD_MAX) / 2;
+
+  function randRange(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function driftValue(current, min, max, maxStep) {
+    let delta = (Math.random() * 2 - 1) * maxStep;
+    let next = current + delta;
+    return Math.max(min, Math.min(max, next));
+  }
+
+  function scheduleAutonomousBreath(myGeneration) {
+    if (myGeneration !== autoGeneration) return;
+
+    breathState = "inhale";
+    pickNewPattern();
+    pickNewB();
+    autoTargetSpeed = randRange(AUTO_SPEED_MIN, AUTO_SPEED_MAX);
+
+    currentInhaleDuration = driftValue(
+      currentInhaleDuration, AUTO_INHALE_MIN, AUTO_INHALE_MAX, AUTO_INHALE_DRIFT
+    );
+
+    setTimeout(function() {
+      if (myGeneration !== autoGeneration) return;
+
+      currentInhaleHold = driftValue(
+        currentInhaleHold, AUTO_INHALE_HOLD_MIN, AUTO_INHALE_HOLD_MAX, AUTO_INHALE_HOLD_DRIFT
+      );
+
+      setTimeout(function() {
+        if (myGeneration !== autoGeneration) return;
+
+        breathState = "exhale";
+        autoTargetSpeed = randRange(AUTO_SPEED_MIN, AUTO_SPEED_MAX);
+
+        currentExhaleDuration = driftValue(
+          currentExhaleDuration, AUTO_EXHALE_MIN, AUTO_EXHALE_MAX, AUTO_EXHALE_DRIFT
+        );
+
+        setTimeout(function() {
+          if (myGeneration !== autoGeneration) return;
+
+          currentExhaleHold = driftValue(
+            currentExhaleHold, AUTO_EXHALE_HOLD_MIN, AUTO_EXHALE_HOLD_MAX, AUTO_EXHALE_HOLD_DRIFT
+          );
+
+          setTimeout(function() {
+            scheduleAutonomousBreath(myGeneration);
+          }, currentExhaleHold);
+
+        }, currentExhaleDuration);
+
+      }, currentInhaleHold);
+
+    }, currentInhaleDuration);
+  }
+
+
+  // =====================================================
+  // GLOBALE VISUALISIERUNGS-VARIABLEN
+  // =====================================================
+
+  let classifier;
+  let classifierReady = false;
+  let currentLabel = "Autonomer Modus";
+  let currentConfidence = 0;
+  let breathState = "neutral";
+  let lastBreathEvent = 0;
+  let smoothedVolume = 0;
+  let currentSpeedMultiplier = 1;
+  let audioAnalyser;
+  let audioDataArray;
+
+  let a = 1;
+  let bValues = [0.25, 1, 3];
+  let b = 3;
+
+  let patterns = [
+    [1.5, 3], [1.5, 4], [1.5, 5],
+    [2, 3], [2, 4],
+    [3, 4], [3, 5],
+    [4, 3], [4, 5],
+    [5, 3], [5, 4]
+  ];
+
+  let currentPatternIndex = 0;
+
+  function pickNewPattern() {
+    let newIndex;
+    do {
+      newIndex = Math.floor(Math.random() * patterns.length);
+    } while (newIndex === currentPatternIndex && patterns.length > 1);
+    currentPatternIndex = newIndex;
+  }
+
+  function pickNewB() {
+    b = bValues[Math.floor(Math.random() * bValues.length)];
+  }
+
+
+  // =====================================================
+  // PARTIKEL
+  // =====================================================
+
+  let particles = [];
+
+  function initParticles() {
+    particles = [];
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+      let u1 = Math.random();
+      let u2 = Math.random();
+
+      let randStdNormalX = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+      let randStdNormalY = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
+
+      let startX = Math.random() * 2 - 1;
+      let startY = Math.random() * 2 - 1;
+
+      particles.push({
+        x: startX,
+        y: startY,
+        homeX: startX,
+        homeY: startY,
+        offsetX: randStdNormalX * 0.3,
+        offsetY: randStdNormalY * 0.3
+      });
+    }
+  }
+
+  initParticles();
+
+
+  // =====================================================
+  // CHLADNI
+  // =====================================================
+
+  function chladni(x, y, a, b, m, n) {
+    let L = 2;
+    return (
+      a * Math.sin(Math.PI * n * x / L) * Math.sin(Math.PI * m * y / L)
+      +
+      b * Math.sin(Math.PI * m * x / L) * Math.sin(Math.PI * n * y / L)
+    );
+  }
+
+
+  // =====================================================
+  // LAUTSTÄRKE-ANALYSE (Mikrofon-Modus)
+  // =====================================================
+
+  async function startVolumeAnalysis() {
+    try {
+      let stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      let source = audioContext.createMediaStreamSource(stream);
+
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 1024;
+      audioDataArray = new Float32Array(audioAnalyser.fftSize);
+
+      source.connect(audioAnalyser);
+      console.log("Lautstärke-Analyse gestartet.");
+    } catch (error) {
+      console.error("Fehler beim Starten der Lautstärke-Analyse:", error);
+    }
+  }
+
+  function updateVolume() {
+    if (!audioAnalyser) return;
+
+    audioAnalyser.getFloatTimeDomainData(audioDataArray);
+
+    let sumSquares = 0;
+    for (let i = 0; i < audioDataArray.length; i++) {
+      let sample = audioDataArray[i];
+      sumSquares += sample * sample;
+    }
+
+    let rms = Math.sqrt(sumSquares / audioDataArray.length);
+    smoothedVolume = smoothedVolume * VOLUME_SMOOTHING + rms * (1 - VOLUME_SMOOTHING);
+  }
+
+  function getSpeedMultiplier() {
+    let clamped = Math.max(VOLUME_NOISE_FLOOR, Math.min(VOLUME_CEILING, smoothedVolume));
+    let t = (clamped - VOLUME_NOISE_FLOOR) / (VOLUME_CEILING - VOLUME_NOISE_FLOOR);
+    return MIN_SPEED_MULTIPLIER + t * (MAX_SPEED_MULTIPLIER - MIN_SPEED_MULTIPLIER);
+  }
+
+
+  // =====================================================
+  // MODELL STARTEN (Mikrofon-Modus über Teachable Machine Cloud)
+  // =====================================================
+
+  async function startBreathRecognition() {
+    try {
+      if (typeof ml5 === "undefined") {
+        console.error("ml5.js ist nicht geladen.");
+        return;
+      }
+
+      // Übergabe der Teachable-Machine-URL direkt an ml5.soundClassifier
+      classifier = ml5.soundClassifier(
+        MODEL_URL + "model.json",
+        { probabilityThreshold: 0 },
+        function() {
+          console.log("Teachable-Machine-Modell (lokal) geladen.");
+          classifierReady = true;
+
+          if (currentMode === "mic") {
+            currentLabel = "Höre zu...";
+            updateControlsUI();
+          }
+
+          classifier.classify(gotResult);
+        }
+      );
+    } catch (error) {
+      console.error("Fehler beim Laden der Atemerkennung:", error);
+      if (currentMode === "mic") {
+        currentLabel = "Fehler beim Laden";
+        updateControlsUI();
+      }
+    }
+  }
+
+  function gotResult(error, results) {
+    if (currentMode !== "mic") return;
+    if (error || !results || results.length === 0) return;
+
+    let result = results[0];
+    currentLabel = result.label;
+    currentConfidence = result.confidence;
+
+    if (currentConfidence < CONFIDENCE_THRESHOLD) return;
+
+    let now = performance.now();
+    if (now - lastBreathEvent < EVENT_COOLDOWN) return;
+
+    if (currentLabel === "ein") {
+      if (breathState !== "inhale") {
+        breathState = "inhale";
+        lastBreathEvent = now;
+        pickNewPattern();
+        pickNewB();
+      }
+      return;
+    }
+
+    if (currentLabel === "aus") {
+      if (breathState !== "exhale") {
+        breathState = "exhale";
+        lastBreathEvent = now;
+      }
+      return;
+    }
+  }
+
+
+  // =====================================================
+  // RESPONSIVES LAYOUT
+  // =====================================================
+
+  const LAYOUT_PAD = 24;
+  const LAYOUT_GAP = 32;
+  const LAYOUT_GAP_TEXT = 48;
+  const VIZ_MIN_SIZE = 120;
+
+  let vizSize = Math.max(VIZ_MIN_SIZE, Math.min(window.innerWidth, window.innerHeight) - 2 * LAYOUT_PAD);
+
+  function layoutUI() {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const cx = W / 2;
+    const cy = H / 2;
+
+    const textEl = document.getElementById("side-text");
+    const ctrlEl = document.getElementById("controls");
+    const btnsEl = document.getElementById("mode-buttons");
+
+    function applyMode(wide) {
+      if (wide) {
+        textEl.innerHTML = "atme tief,<br>ein und aus.";
+        ctrlEl.classList.add("wide");
+        ctrlEl.classList.remove("stacked");
+      } else {
+        textEl.innerHTML = "atme tief, ein und aus.";
+        ctrlEl.classList.add("stacked");
+        ctrlEl.classList.remove("wide");
+      }
+    }
+
+    let useWide = (W > H) && (W >= 600);
+    applyMode(useWide);
+
+    if (useWide && ctrlEl.offsetHeight > H - 2 * LAYOUT_PAD) {
+      useWide = false;
+      applyMode(false);
+    }
+
+    const tw = textEl.offsetWidth;   
+    const th = textEl.offsetHeight;  
+    const cw = ctrlEl.offsetWidth;
+    const ch = ctrlEl.offsetHeight;
+
+    if (useWide) {
+      const sideW = Math.max(tw + LAYOUT_GAP_TEXT, cw + LAYOUT_GAP) + LAYOUT_PAD;
+      vizSize = Math.max(VIZ_MIN_SIZE, Math.min(H - 2 * LAYOUT_PAD, W - 2 * sideW));
+
+      const leftBoundary = LAYOUT_PAD;
+      const rightBoundary = cx - vizSize / 2 - LAYOUT_GAP_TEXT;
+      const textCenterX = (leftBoundary + rightBoundary) / 2;
+
+      textEl.style.left = Math.max(LAYOUT_PAD, textCenterX - tw / 2) + "px";
+      textEl.style.top = (cy - th / 2) + "px";
+      textEl.style.transform = "none";
+      textEl.style.textAlign = "center";
+
+      const ctrlLeftBoundary = cx + vizSize / 2 + LAYOUT_GAP;
+      const ctrlRightBoundary = W - LAYOUT_PAD;
+      const ctrlCenterX = (ctrlLeftBoundary + ctrlRightBoundary) / 2;
+      const wordsCenterY = btnsEl.offsetTop + btnsEl.offsetHeight / 2;
+
+      ctrlEl.style.left = (ctrlCenterX - cw / 2) + "px";
+      ctrlEl.style.top = (cy - wordsCenterY) + "px";
+    } else {
+      const stackH = Math.max(th, ch) + LAYOUT_GAP + LAYOUT_PAD;
+      vizSize = Math.max(VIZ_MIN_SIZE, Math.min(W - 2 * LAYOUT_PAD, H - 2 * stackH));
+
+      textEl.style.left = (cx - tw / 2) + "px";
+      textEl.style.top = (cy - vizSize / 2 - LAYOUT_GAP - th) + "px";
+      textEl.style.transform = "none";
+      textEl.style.textAlign = "center";
+
+      ctrlEl.style.left = (cx - cw / 2) + "px";
+      ctrlEl.style.top = (cy + vizSize / 2 + LAYOUT_GAP) + "px";
+    }
+  }
+
+  layoutUI();
+  window.addEventListener("resize", layoutUI);
+
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(layoutUI);
+  }
+
+
+  // =====================================================
+  // P5 (Instance Mode)
+  // =====================================================
+
+  let p5Canvas = null;
+
+  const sketch = function(sk) {
+    sk.setup = function() {
+      let cnv = sk.createCanvas(window.innerWidth, window.innerHeight);
+      p5Canvas = cnv.elt;
+
+      sk.pixelDensity(Math.min(window.devicePixelRatio || 1, 2));
+      sk.clear();
+      sk.noSmooth();
+    };
+
+    sk.windowResized = function() {
+      sk.resizeCanvas(window.innerWidth, window.innerHeight);
+    };
+
+    sk.draw = function() {
+      if (currentMode === "auto") {
+        currentSpeedMultiplier += (autoTargetSpeed - currentSpeedMultiplier) * AUTO_SPEED_EASING;
+      } else {
+        updateVolume();
+        currentSpeedMultiplier = getSpeedMultiplier();
+      }
+
+      sk.background(0);
+      sk.stroke(255);
+      sk.strokeWeight(2.2);
+      sk.strokeCap(sk.ROUND);
+
+      let m = patterns[currentPatternIndex][0];
+      let n = patterns[currentPatternIndex][1];
+
+      let size = vizSize;
+      let offsetX = (sk.width - size) / 2;
+      let offsetY = (sk.height - size) / 2;
+
+      for (let i = 0; i < particles.length; i++) {
+        let p = particles[i];
+
+        if (breathState === "inhale") {
+          let val = chladni(p.x, p.y, a, b, m, n);
+          let absVal = Math.abs(val);
+          let eps = 0.005;
+
+          let dx = (chladni(p.x + eps, p.y, a, b, m, n) - val) / eps;
+          let dy = (chladni(p.x, p.y + eps, a, b, m, n) - val) / eps;
+
+          let gradLen = Math.sqrt(dx * dx + dy * dy);
+          let normDx = dx / (gradLen + 0.0001);
+          let normDy = dy / (gradLen + 0.0001);
+
+          let pullFactor = absVal * INHALE_SPEED * currentSpeedMultiplier;
+          let dir = val > 0 ? -1 : 1;
+
+          p.x += normDx * pullFactor * dir;
+          p.y += normDy * pullFactor * dir;
+        } else if (breathState === "exhale") {
+          p.x += (p.homeX - p.x) * EXHALE_SPEED * currentSpeedMultiplier;
+          p.y += (p.homeY - p.y) * EXHALE_SPEED * currentSpeedMultiplier;
+        }
+
+        p.x = Math.max(-1, Math.min(1, p.x));
+        p.y = Math.max(-1, Math.min(1, p.y));
+
+        let valForDisp = chladni(p.x, p.y, a, b, m, n);
+        let lineProximity = Math.exp(-Math.abs(valForDisp) * Math.abs(valForDisp) * 50);
+        let dispersion = lineProximity * 0.015;
+
+        let grainX = p.x + p.offsetX * dispersion;
+        let grainY = p.y + p.offsetY * dispersion;
+
+        let px = offsetX + sk.map(grainX, -1, 1, 0, size);
+        let py = offsetY + sk.map(grainY, -1, 1, 0, size);
+
+        sk.point(px, py);
+      }
+    };
+  };
+
+  new p5(sketch, "p5-holder");
+
+
+  // =====================================================
+  // HYDRA
+  // =====================================================
+
+  const hydraCanvas = document.createElement("canvas");
+  hydraCanvas.id = "hydra-canvas";
+  hydraCanvas.style.zIndex = "1";
+  document.body.appendChild(hydraCanvas);
+
+  const hydra = new Hydra({
+    canvas: hydraCanvas,
+    detectAudio: false,
+    makeGlobal: true
+  });
+
+  setResolution(window.innerWidth, window.innerHeight);
+
+  function trySetupHydraSource() {
+    if (p5Canvas) {
+      s0.init({ src: p5Canvas });
+      src(s0)
+        .modulate(noise(2, 0.1), 0.03)
+        .out();
+    } else {
+      setTimeout(trySetupHydraSource, 50);
+    }
+  }
+
+  trySetupHydraSource();
+
+  window.addEventListener("resize", function() {
+    hydraCanvas.width = window.innerWidth;
+    hydraCanvas.height = window.innerHeight;
+    setResolution(window.innerWidth, window.innerHeight);
+  });
+
+
+  // =====================================================
+  // START
+  // =====================================================
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedMode = urlParams.get("mode");
+  const initialMode = (requestedMode === "mic") ? "mic" : "auto";
+
+  switchMode(initialMode);
+
+
+  // =====================================================
+  // SERVICE WORKER REGISTRIERUNG
+  // =====================================================
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => console.log('Service Worker erfolgreich registriert:', reg.scope))
+        .catch(err => console.error('Service Worker Fehler:', err));
+    });
+  }
+</script>
+</body>
+</html>
